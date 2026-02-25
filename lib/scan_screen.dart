@@ -3,18 +3,17 @@ import 'dart:ui';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:label_lensv2/auth_service.dart';
 import 'package:label_lensv2/app_colors.dart';
 import 'package:label_lensv2/app_styles.dart';
 import 'package:label_lensv2/dashed_border_painter.dart';
-
 import 'dart:math' as math;
 import 'package:label_lensv2/dotted_background.dart';
-import 'package:label_lensv2/mock_data_service.dart';
 import 'package:label_lensv2/neopop_button.dart';
+import 'package:label_lensv2/scan_result.dart';
 
 
 class ScanScreen extends StatefulWidget {
@@ -33,6 +32,7 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   late final AnimationController _pulseAnimationController;
   CameraController? _cameraController;
   Future<void>? _initializeControllerFuture;
+  ScanResult? _scanResult;
 
   @override
   void initState() {
@@ -189,20 +189,10 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     }
 
     if (image != null) {
-      await _extractTextFromImage(image);
+      setState(() => _scanState = 'processing'); // Show loading UI first
 
-      setState(() => _scanState = 'processing');
-      // For demo, switch to result after a few seconds
-      Future.delayed(const Duration(seconds: 5), () {
-        if (mounted && _scanState == 'processing') {
-          setState(() => math.Random().nextDouble() > 0.8 ? _scanState = 'error' : _scanState = 'result');
-        }
-      });
-    }
-  }
-
-  Future<void> _extractTextFromImage(XFile image) async {
-    try {
+      try {
+        // 1. Extract text
       final textRecognizer = TextRecognizer();
       final inputImage = InputImage.fromFilePath(image.path);
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
@@ -210,40 +200,50 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
       String fullText = recognizedText.text.toLowerCase();
       List<String> ingredientsList = [];
+      String productName = recognizedText.text.split('\n').first.trim();
+      if (productName.isEmpty && recognizedText.blocks.isNotEmpty) {
+        productName = recognizedText.blocks.first.text.replaceAll('\n', ' ');
+      }
+      if (productName.isEmpty) {
+        productName = "Scanned Product";
+      }
 
-      // A simple heuristic to find the ingredients list
+      // 2. Parse ingredients
       const ingredientsKeyword = 'ingredients';
       int keywordIndex = fullText.indexOf(ingredientsKeyword);
 
       if (keywordIndex != -1) {
         String ingredientsBlock = fullText.substring(keywordIndex + ingredientsKeyword.length);
 
-        // Clean up the start of the block (remove ':', ' ', etc.)
         ingredientsBlock = ingredientsBlock.trim().replaceFirst(RegExp(r'^[:\s]+'), '');
 
-        // Assume ingredients end with a period.
         int endOfListIndex = ingredientsBlock.indexOf('.');
         if (endOfListIndex != -1) {
           ingredientsBlock = ingredientsBlock.substring(0, endOfListIndex);
         }
 
-        // Remove content in parentheses (like percentages) and other unwanted characters
         ingredientsBlock = ingredientsBlock.replaceAll(RegExp(r'\([^)]*\)'), '');
 
         ingredientsList =
             ingredientsBlock.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
       }
 
-      final Map<String, dynamic> jsonOutput = {
-        'ingredients': ingredientsList,
-      };
-      final String jsonString = jsonEncode(jsonOutput);
+        // 3. Call API
+        final authService = AuthService();
+        final result = await authService.scanIngredients(ingredientsList, productName: productName);
 
-      debugPrint('--- EXTRACTED TEXT AS JSON ---');
-      debugPrint(jsonString);
-      debugPrint('------------------------------');
-    } catch (e) {
-      debugPrint('Error during text recognition: $e');
+        if (mounted) {
+          setState(() {
+            _scanResult = result;
+            _scanState = 'result';
+          });
+        }
+      } catch (e) {
+        debugPrint('Error during processing or API call: $e');
+        if (mounted) {
+          setState(() => _scanState = 'error');
+        }
+      }
     }
   }
 
@@ -251,7 +251,7 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: isDarkMode ? AppColors.indigo950 : AppColors.slate800,
+        color: isDarkMode ? AppColors.slate900.withOpacity(0.8) : AppColors.slate800.withOpacity(0.8),
         borderRadius: BorderRadius.circular(16),
         border: AppStyles.getBorder(true, width: 2), // Always black border
         boxShadow: [AppStyles.getShadow(true, offset: 4)], // Always black shadow
@@ -365,71 +365,74 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
   Widget _buildGalleryMode(BuildContext context, bool isDarkMode) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0),
-        child: CustomPaint(
-          painter: DashedBorderPainter(
-            color: isDarkMode ? AppColors.slate600 : AppColors.slate300,
-            strokeWidth: 4,
-            radius: const Radius.circular(32),
-            dashWidth: 15,
-            dashSpace: 10,
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(40),
-            decoration: BoxDecoration(
-              color: isDarkMode ? AppColors.slate800 : AppColors.white,
-              borderRadius: BorderRadius.circular(32),
-              boxShadow: [AppStyles.getShadow(isDarkMode, offset: 8)],
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+        children: [
+          CustomPaint(
+            painter: DashedBorderPainter(
+              color: isDarkMode ? AppColors.slate600 : AppColors.slate300,
+              strokeWidth: 4,
+              radius: const Radius.circular(32),
+              dashWidth: 15,
+              dashSpace: 10,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Transform.rotate(
-                  angle: -3 * (math.pi / 180),
-                  child: Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      color: isDarkMode ? AppColors.indigo900 : AppColors.indigo300,
-                      borderRadius: BorderRadius.circular(16),
-                      border: AppStyles.getBorder(isDarkMode, width: 2),
-                      boxShadow: [AppStyles.getShadow(isDarkMode, offset: 4)],
+            child: Container(
+              padding: const EdgeInsets.all(40),
+              decoration: BoxDecoration(
+                color: isDarkMode ? AppColors.slate800 : AppColors.white,
+                borderRadius: BorderRadius.circular(32),
+                boxShadow: [AppStyles.getShadow(isDarkMode, offset: 8)],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Transform.rotate(
+                    angle: -3 * (math.pi / 180),
+                    child: Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        color: isDarkMode ? AppColors.indigo900 : AppColors.indigo300,
+                        borderRadius: BorderRadius.circular(16),
+                        border: AppStyles.getBorder(isDarkMode, width: 2),
+                        boxShadow: [AppStyles.getShadow(isDarkMode, offset: 4)],
+                      ),
+                      child: Icon(Icons.cloud_upload_outlined, size: 48, color: isDarkMode ? AppColors.slate50 : AppColors.slate900),
                     ),
-                    child: Icon(Icons.cloud_upload_outlined, size: 48, color: isDarkMode ? AppColors.slate50 : AppColors.slate900),
                   ),
-                ),
-                const SizedBox(height: 24),
-                Text('IMPORT PHOTO', style: AppStyles.heading1.copyWith(fontSize: 24, color: isDarkMode ? AppColors.white : AppColors.slate900)),
-                const SizedBox(height: 8),
-                Text(
-                  'Upload an image of a food label from your gallery.',
-                  textAlign: TextAlign.center,
-                  style: AppStyles.bodyBold.copyWith(color: isDarkMode ? AppColors.slate300 : AppColors.slate600),
-                ),
-                const SizedBox(height: 32),
-                SizedBox(
-                  height: 56,
-                  child: NeopopButton(
-                    onPressed: startProcessing,
-                    color: AppColors.indigo500,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.image_outlined, color: AppColors.white),
-                          const SizedBox(width: 12),
-                          Text('Open Gallery', style: AppStyles.buttonText),
-                        ],
+                  const SizedBox(height: 24),
+                  Text('IMPORT PHOTO', style: AppStyles.heading1.copyWith(fontSize: 24, color: isDarkMode ? AppColors.white : AppColors.slate900)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Upload an image of a food label from your gallery.',
+                    textAlign: TextAlign.center,
+                    style: AppStyles.bodyBold.copyWith(color: isDarkMode ? AppColors.slate300 : AppColors.slate600),
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    height: 56,
+                    child: NeopopButton(
+                      onPressed: startProcessing,
+                      color: AppColors.indigo500,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.image_outlined, color: AppColors.white),
+                            const SizedBox(width: 12),
+                            Text('Open Gallery', style: AppStyles.buttonText),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -463,8 +466,16 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 
   Widget _buildResultState() {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final result = mockScanResult;
-    final statusColor = result['overallStatus'] == 'danger' ? AppColors.rose500 : AppColors.emerald500;
+    final result = _scanResult;
+
+    if (result == null) {
+      return _buildErrorState();
+    }
+
+    final severity = result.severity.toLowerCase();
+    final statusColor = severity == 'critical'
+        ? AppColors.rose500
+        : (severity == 'moderate' ? AppColors.amber300 : AppColors.emerald500);
 
     return Scaffold(
     backgroundColor: isDarkMode ? AppColors.slate900 : AppColors.slate50,
@@ -495,72 +506,113 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
             ),
             child: Column(
               children: [
-                Text(result['productName'] as String, style: AppStyles.heading1.copyWith(fontSize: 24)),
+                Text(result.productName.toUpperCase(), style: AppStyles.heading1.copyWith(fontSize: 24), textAlign: TextAlign.center),
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: statusColor,
                     borderRadius: BorderRadius.circular(8),
-                    border: AppStyles.getBorder(true, width: 2),
+                    border: AppStyles.getBorder(isDarkMode, width: 2),
                   ),
                   child: Text(
-                    (result['summary'] as String).toUpperCase(),
+                    severity.toUpperCase(),
                     style: AppStyles.bodyBold.copyWith(color: Colors.white, fontSize: 12),
                   ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  result.summary,
+                  textAlign: TextAlign.center,
+                  style: AppStyles.bodyBold.copyWith(color: isDarkMode ? AppColors.slate300 : AppColors.slate600),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 32),
-          Text('DIETARY TAGS', style: AppStyles.heading1.copyWith(fontSize: 16)),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: (result['dietaryTags'] as List).map((tag) {
-              final color = tag['color'] == 'rose' ? AppColors.rose400 : (tag['color'] == 'amber' ? AppColors.amber300 : AppColors.emerald400);
+          if (result.issues.isNotEmpty) ...[
+            Text('IDENTIFIED ISSUES', style: AppStyles.heading1.copyWith(fontSize: 16)),
+            const SizedBox(height: 16),
+            ...result.issues.map((issue) {
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(12),
-                  border: AppStyles.getBorder(isDarkMode, width: 2),
+                  color: isDarkMode ? AppColors.slate800 : AppColors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.rose400, width: 2),
                 ),
-                child: Text(tag['label'], style: AppStyles.bodyBold.copyWith(color: AppColors.slate900, fontSize: 12)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: AppColors.rose400),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(issue.reason, style: AppStyles.bodyBold),
+                    ),
+                  ],
+                ),
               );
             }).toList(),
+            const SizedBox(height: 32),
+          ],
+          Text('HEALTH IMPACT', style: AppStyles.heading1.copyWith(fontSize: 16)),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDarkMode ? AppColors.slate800 : AppColors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: AppStyles.getBorder(isDarkMode, width: 2),
+            ),
+            child: Text(result.healthImpact, style: AppStyles.bodyBold.copyWith(height: 1.5)),
           ),
           const SizedBox(height: 32),
-          Text('INGREDIENTS ANALYSIS', style: AppStyles.heading1.copyWith(fontSize: 16)),
-          const SizedBox(height: 16),
-          ... (result['ingredients'] as List).map((ing) {
-            final ingColor = ing['status'] == 'danger' ? AppColors.rose400 : (ing['status'] == 'warning' ? AppColors.amber300 : AppColors.emerald400);
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDarkMode ? AppColors.slate800 : AppColors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: ingColor, width: 2),
-              ),
-              child: Row(
-                children: [
-                  Icon(ing['isVegan'] ? Icons.eco : Icons.kebab_dining, color: ingColor),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(ing['name'], style: AppStyles.bodyBold),
-                        Text(ing['description'], style: AppStyles.bodyBold.copyWith(fontSize: 12, fontWeight: FontWeight.normal)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
+          if (result.alternatives.isNotEmpty) ...[
+            Text('SUGGESTED ALTERNATIVES', style: AppStyles.heading1.copyWith(fontSize: 16)),
+            const SizedBox(height: 16),
+            ...result.alternatives.map((alt) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDarkMode ? AppColors.slate800 : AppColors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.emerald400, width: 2),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(alt.name, style: AppStyles.bodyBold.copyWith(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 8),
+                    Text(alt.reason, style: AppStyles.bodyBold.copyWith(fontWeight: FontWeight.normal)),
+                    const SizedBox(height: 12),
+                    if (alt.searchLink.isNotEmpty)
+                      SizedBox(
+                        height: 40,
+                        child: NeopopButton(
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: alt.searchLink));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Link copied to clipboard!')),
+                            );
+                          },
+                          color: AppColors.indigo400,
+                          child: Center(
+                              child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.copy, color: Colors.white, size: 14),
+                              const SizedBox(width: 8),
+                              Text('Copy Link', style: AppStyles.buttonText.copyWith(fontSize: 12)),
+                            ],
+                          )),
+                        ),
+                      )
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
         ],
       ),
     ),
@@ -642,10 +694,10 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     body: DottedBackground(
       dotColor: (isDarkMode ? AppColors.rose300 : AppColors.rose400).withOpacity(0.2),
       child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
           children: [
-            // Error Icon
             Container(
               width: 160,
               height: 160,

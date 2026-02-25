@@ -35,14 +35,13 @@ class BottomNavBar extends StatelessWidget {
             ),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _buildNavItem(context, icon: Icons.home_outlined, label: 'Home', index: 0),
-              _buildNavItem(context, icon: Icons.history, label: 'Log', index: 1),
+              Expanded(child: _buildNavItem(context, icon: Icons.home_outlined, label: 'Home', index: 0)),
+              Expanded(child: _buildNavItem(context, icon: Icons.history, label: 'Log', index: 1)),
               const SizedBox(width: 64), // Spacer
-              _buildNavItem(context, icon: Icons.bookmark_border, label: 'Saved', index: 3),
-              _buildNavItem(context, icon: Icons.person_outline, label: 'Profile', index: 4),
+              Expanded(child: _buildNavItem(context, icon: Icons.bookmark_border, label: 'Saved', index: 3)),
+              Expanded(child: _buildNavItem(context, icon: Icons.person_outline, label: 'Profile', index: 4)),
             ],
           ),
         ),
@@ -91,7 +90,6 @@ class BottomNavBar extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         transform: Matrix4.translationValues(0, isActive ? -4 : 0, 0),
         padding: const EdgeInsets.symmetric(vertical: 8),
-        constraints: const BoxConstraints(minWidth: 64),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,

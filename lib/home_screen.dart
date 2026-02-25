@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:label_lensv2/app_colors.dart';
 import 'package:label_lensv2/app_styles.dart';
 import 'package:label_lensv2/auth_service.dart';
-import 'package:label_lensv2/history_list_item.dart';
-import 'package:label_lensv2/mock_data_service.dart';
-
-
 import 'package:label_lensv2/neopop_button.dart';
 import 'dart:math' as math;
-
 import 'package:label_lensv2/user_profile.dart';
+import 'package:label_lensv2/scan_result.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -21,59 +18,64 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final AuthService _authService = AuthService();
-  UserProfile? _userProfile;
-  bool _isLoading = true;
+  late Future<List<dynamic>> _dataFuture;
 
   @override
   void initState() {
     super.initState();
-    _fetchUserProfile();
-  }
-
-  Future<void> _fetchUserProfile() async {
-    try {
-      final userProfile = await _authService.getUserProfile();
-      if (mounted) {
-        setState(() {
-          _userProfile = userProfile;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          // On home screen, we can fail silently and just show a default name.
-        });
-      }
-    }
+    _dataFuture = Future.wait([
+      _authService.getUserProfile(),
+      _authService.getScanHistory(),
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: isDarkMode ? AppColors.white : AppColors.slate900))
-          : SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildMainBanner(context, isDarkMode),
-                    const SizedBox(height: 24),
-                    _buildStatsRow(context, isDarkMode),
-                    const SizedBox(height: 32),
-                    _buildRecentScans(context, isDarkMode),
-                  ],
-                ),
-              ),
+      backgroundColor: isDarkMode ? AppColors.slate900 : AppColors.slate50,
+      body: FutureBuilder<List<dynamic>>(
+        future: _dataFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator(color: isDarkMode ? AppColors.white : AppColors.slate900));
+          }
+
+          UserProfile? userProfile;
+          List<ScanHistoryItem> history = [];
+
+          if (snapshot.hasData) {
+            // The API calls can fail individually, so we check the types.
+            if (snapshot.data![0] is UserProfile) {
+              userProfile = snapshot.data![0] as UserProfile;
+            }
+            if (snapshot.data![1] is List<ScanHistoryItem>) {
+              history = snapshot.data![1] as List<ScanHistoryItem>;
+            }
+          }
+
+          final safeCount = history.where((item) => item.result.safe).length;
+          final unsafeCount = history.length - safeCount;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0).copyWith(top: MediaQuery.of(context).padding.top + 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildMainBanner(context, isDarkMode, userProfile),
+                const SizedBox(height: 24),
+                _buildStatsRow(context, isDarkMode, safeCount, unsafeCount),
+                const SizedBox(height: 32),
+                _buildRecentScans(context, isDarkMode, history),
+              ],
             ),
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildMainBanner(BuildContext context, bool isDarkMode) {
+  Widget _buildMainBanner(BuildContext context, bool isDarkMode, UserProfile? userProfile) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -100,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildStatusBadge(isDarkMode),
               const SizedBox(height: 16),
               Text(
-                'Hi, ${_userProfile?.name ?? 'User'}!',
+                'Hi, ${userProfile?.name ?? 'User'}!',
                 style: AppStyles.heading1.copyWith(color: AppColors.slate900),
               ),
               const SizedBox(height: 4),
@@ -112,7 +114,9 @@ class _HomeScreenState extends State<HomeScreen> {
               SizedBox(
                 height: 56,
                 child: NeopopButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    // This should be handled by the parent widget managing the BottomNavBar
+                  },
                   color: AppColors.white,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -165,7 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStatsRow(BuildContext context, bool isDarkMode) {
+  Widget _buildStatsRow(BuildContext context, bool isDarkMode, int safeCount, int unsafeCount) {
     return Row(
       children: [
         Expanded(
@@ -173,7 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
               color: AppColors.emerald300,
               icon: Icons.check_circle_outline,
               label: 'SAFE ITEMS',
-              value: '42',
+              value: safeCount.toString(),
               labelColor: AppColors.emerald900,
               rotation: -3),
         ),
@@ -183,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
               color: AppColors.rose300,
               icon: Icons.cancel_outlined,
               label: 'FLAGGED ITEMS',
-              value: '8',
+              value: unsafeCount.toString(),
               labelColor: AppColors.rose900,
               rotation: 3),
         ),
@@ -234,18 +238,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildRecentScans(BuildContext context, bool isDarkMode) {
+  Widget _buildRecentScans(BuildContext context, bool isDarkMode, List<ScanHistoryItem> history) {
+    final recentScans = history.take(2).toList();
+
     return Column(
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text('Recent Scans', style: AppStyles.heading1.copyWith(fontSize: 20, color: isDarkMode ? AppColors.white : AppColors.slate900)),
+            Text('RECENT SCANS', style: AppStyles.heading1.copyWith(fontSize: 16, color: isDarkMode ? AppColors.white : AppColors.slate900)),
             SizedBox(
               height: 32,
               child: NeopopButton(
-                onPressed: () {},
+                onPressed: () { },
                 color: isDarkMode ? AppColors.slate800 : AppColors.white,
                 shadowOffset: 2,
                 child: Padding(
@@ -264,8 +270,107 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        ...recentMockHistory.map((item) => HistoryListItem(item: item)).toList(),
+        if (recentScans.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(32),
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: isDarkMode ? AppColors.slate800 : AppColors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: AppStyles.getBorder(isDarkMode),
+            ),
+            child: Center(
+              child: Text(
+                'Your recent scans will appear here.',
+                style: AppStyles.body.copyWith(color: isDarkMode ? AppColors.slate400 : AppColors.slate500),
+              ),
+            ),
+          )
+        else
+          ...recentScans.map((item) => _buildRecentScanItem(context, item, isDarkMode)),
       ],
+    );
+  }
+
+  Widget _buildRecentScanItem(BuildContext context, ScanHistoryItem item, bool isDarkMode) {
+    final result = item.result;
+    final severity = result.severity.toLowerCase();
+    final statusColor = result.safe ? AppColors.emerald400 : (severity == 'critical' ? AppColors.rose400 : AppColors.amber300);
+
+    return GestureDetector(
+      onTap: () => _showHistoryDetailDialog(context, item, isDarkMode),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDarkMode ? AppColors.slate800 : AppColors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: statusColor, width: 2),
+          boxShadow: [AppStyles.getShadow(isDarkMode)],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    result.productName,
+                    style: AppStyles.bodyBold.copyWith(
+                      fontWeight: FontWeight.w900,
+                      color: isDarkMode ? AppColors.white : AppColors.slate900,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat.yMMMd().add_jm().format(item.createdAt.toLocal()),
+                    style: AppStyles.body.copyWith(
+                      fontSize: 12,
+                      color: isDarkMode ? AppColors.slate400 : AppColors.slate500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Icon(Icons.chevron_right, color: isDarkMode ? AppColors.slate400 : AppColors.slate500),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showHistoryDetailDialog(BuildContext context, ScanHistoryItem item, bool isDarkMode) {
+    // This logic is duplicated from HistoryScreen. For a larger app, consider refactoring into a shared widget.
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: isDarkMode ? AppColors.slate800 : AppColors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: AppStyles.getBorderSide(isDarkMode, width: 2),
+          ),
+          title: Text(item.result.productName, style: AppStyles.heading1, textAlign: TextAlign.center),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Text(item.result.summary, textAlign: TextAlign.center, style: AppStyles.body),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                'Close',
+                style: TextStyle(color: isDarkMode ? AppColors.indigo300 : AppColors.indigo500),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

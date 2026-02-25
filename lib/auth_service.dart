@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:label_lensv2/user_profile.dart';
+import 'package:intl/intl.dart';
+import 'package:label_lensv2/scan_result.dart';
 
 
 class AuthService {
@@ -166,5 +168,97 @@ class AuthService {
     final token = await _getToken();
     // For a more robust check, you could decode the JWT and check its expiration date.
     return token != null;
+  }
+
+  Future<ScanResult> scanIngredients(List<String> ingredients, {String? productName}) async {
+    final token = await _getToken();
+    if (token == null) {
+      throw Exception('Authentication token not found. Please log in again.');
+    }
+
+    final Map<String, dynamic> body = {
+      'ingredients': ingredients,
+    };
+
+    try {
+      final response = await http.post(
+        Uri.parse('$_apiBaseUrl/api/scan'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 200) {
+        final responseBody = jsonDecode(response.body);
+        return ScanResult.fromJson(responseBody, productName: productName ?? 'Scanned Product');
+      } else {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? 'Failed to scan. Status code: ${response.statusCode}');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<List<ScanHistoryItem>> getScanHistory() async {
+    final token = await _getToken();
+    if (token == null) {
+      throw Exception('Authentication token not found. Please log in again.');
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('$_apiBaseUrl/api/scan/history'),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=UTF-8',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final responseBody = jsonDecode(response.body);
+        if (responseBody['success'] == true && responseBody['history'] != null) {
+          final List<dynamic> historyList = responseBody['history'];
+          return historyList
+              .map((item) => ScanHistoryItem.fromJson(item))
+              .toList();
+        } else {
+          throw Exception(responseBody['message'] ?? 'Failed to parse history data.');
+        }
+      } else {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? 'Failed to fetch history. Status code: ${response.statusCode}');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+}
+
+class ScanHistoryItem {
+  final ScanResult result;
+  final String id;
+  final DateTime createdAt;
+  final String productName;
+
+  ScanHistoryItem({
+    required this.result,
+    required this.id,
+    required this.createdAt,
+    required this.productName,
+  });
+
+  factory ScanHistoryItem.fromJson(Map<String, dynamic> json) {
+    final createdAt = DateTime.parse(json['createdAt']);
+    final productName = 'Scan on ${DateFormat.yMMMd().format(createdAt.toLocal())}';
+
+    return ScanHistoryItem(
+      id: json['_id'],
+      result: ScanResult.fromJson(json['result'], productName: productName),
+      createdAt: createdAt,
+      productName: productName,
+    );
   }
 }

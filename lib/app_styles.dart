@@ -24,6 +24,14 @@ class AppStyles {
     fontFamily: 'System',
   );
 
+  static const TextStyle body = TextStyle(
+    fontWeight: FontWeight.normal,
+    fontSize: 14,
+    color: AppColors.slate600,
+    fontFamily: 'System',
+    height: 1.4,
+  );
+
   static BoxShadow getShadow(bool isDarkMode, {double offset = 4.0}) {
     return BoxShadow(
       color: isDarkMode ? AppColors.black : AppColors.slate900,
@@ -34,6 +42,13 @@ class AppStyles {
 
   static Border getBorder(bool isDarkMode, {double width = 2.0}) {
     return Border.all(
+      color: isDarkMode ? AppColors.black : AppColors.slate900,
+      width: width,
+    );
+  }
+
+  static BorderSide getBorderSide(bool isDarkMode, {double width = 2.0}) {
+    return BorderSide(
       color: isDarkMode ? AppColors.black : AppColors.slate900,
       width: width,
     );

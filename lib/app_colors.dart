@@ -34,4 +34,8 @@ class AppColors {
   static const Color indigo200 = Color(0xFFC7D2FE);
   static const Color emerald200 = Color(0xFFA7F3D0);
   static const Color amber200 = Color(0xFFFDE68A);
+
+  static get slate400 => null;
+
+  static get slate500 => null;
 }
