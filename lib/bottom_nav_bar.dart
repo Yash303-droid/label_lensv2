@@ -38,10 +38,8 @@ class BottomNavBar extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(child: _buildNavItem(context, icon: Icons.home_outlined, label: 'Home', index: 0)),
-              Expanded(child: _buildNavItem(context, icon: Icons.history, label: 'Log', index: 1)),
               const SizedBox(width: 64), // Spacer
-              Expanded(child: _buildNavItem(context, icon: Icons.bookmark_border, label: 'Saved', index: 3)),
-              Expanded(child: _buildNavItem(context, icon: Icons.person_outline, label: 'Profile', index: 4)),
+              Expanded(child: _buildNavItem(context, icon: Icons.person_outline, label: 'Profile', index: 2)),
             ],
           ),
         ),
@@ -54,12 +52,12 @@ class BottomNavBar extends StatelessWidget {
   }
 
   Widget _buildFloatingScanButton(BuildContext context) {
-    final isScanActive = selectedIndex == 2;
+    final isScanActive = selectedIndex == 1;
     return SizedBox(
       width: 72,
       height: 72,
       child: NeopopButton(
-        onPressed: () => onItemTapped(2),
+        onPressed: () => onItemTapped(1),
         color: isScanActive ? AppColors.emerald400 : AppColors.indigo400,
         borderWidth: 4,
         shadowOffset: isScanActive ? 2 : 6,

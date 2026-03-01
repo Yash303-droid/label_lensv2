@@ -24,6 +24,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _historyFuture = AuthService().getScanHistory();
   }
 
+  Future<void> _refreshHistory() async {
+    setState(() {
+      _historyFuture = AuthService().getScanHistory();
+    });
+    await _historyFuture;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
@@ -56,19 +63,30 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     return Center(child: Text('Failed to load history: ${snapshot.error}'));
                   }
                   if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return const Center(child: Text('No scan history found.'));
+                    return RefreshIndicator(
+                      onRefresh: _refreshHistory,
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+                          const Center(child: Text('No scan history found.')),
+                        ],
+                      ),
+                    );
                   }
 
                   final historyItems = snapshot.data!;
-                  return ListView.builder(
+                  return RefreshIndicator(
+                    onRefresh: _refreshHistory,
+                    color: isDarkMode ? AppColors.slate900 : AppColors.white,
+                    backgroundColor: isDarkMode ? AppColors.white : AppColors.slate900,
+                    child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     itemCount: historyItems.length,
                     itemBuilder: (context, index) {
                       final item = historyItems[index];
                       final result = item.result;
-                      final severity = result.severity.toLowerCase();
-                      final statusColor = severity == 'critical'
-                          ? AppColors.rose400
-                          : (severity == 'moderate' ? AppColors.amber300 : AppColors.emerald400);
+                      final statusColor = result.safe ? AppColors.emerald400 : AppColors.rose400;
 
                       return GestureDetector(
                         onTap: () => _showHistoryDetailDialog(context, item, isDarkMode),
@@ -111,6 +129,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         ),
                       );
                     },
+                  ),
                   );
                 },
               ),
@@ -141,20 +160,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 children: [
                   Text(item.result.summary, textAlign: TextAlign.center, style: AppStyles.body),
                   const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      RiskScorePieChart(
-                          riskScore: item.result.riskScore, isDarkMode: isDarkMode),
-                      SafeStatusWidget(isSafe: item.result.safe, isDarkMode: isDarkMode),
-                    ],
-                  ),
-                  if (item.result.issues.isNotEmpty) ...[
+                  Center(child: SafeStatusWidget(isSafe: item.result.safe, isDarkMode: isDarkMode)),
+                  if (item.ingredients.isNotEmpty) ...[
                     const SizedBox(height: 24),
-                    Text('Identified Issues', style: AppStyles.heading1.copyWith(fontSize: 16)),
+                    Text('Ingredients', style: AppStyles.heading1.copyWith(fontSize: 16)),
                     const SizedBox(height: 8),
-                    ...item.result.issues.map((issue) => Text('• ${issue.reason}', style: AppStyles.body)),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: item.ingredients.map((ing) => Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isDarkMode ? AppColors.slate700 : AppColors.slate200,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(ing, style: AppStyles.body.copyWith(fontSize: 12)),
+                      )).toList(),
+                    ),
+                  ],
+                  if (item.result.verdicts.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    Text('Verdicts', style: AppStyles.heading1.copyWith(fontSize: 16)),
+                    const SizedBox(height: 8),
+                    ...item.result.verdicts.map((v) => Text('• ${v.category.toUpperCase()}: ${v.reason}', style: AppStyles.body)),
                   ],
                   if (item.result.alternatives.isNotEmpty) ...[
                     const SizedBox(height: 24),
@@ -224,99 +252,5 @@ class SafeStatusWidget extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class RiskScorePieChart extends StatelessWidget {
-  final int riskScore;
-  final bool isDarkMode;
-
-  const RiskScorePieChart(
-      {Key? key, required this.riskScore, required this.isDarkMode})
-      : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    Color scoreColor;
-    if (riskScore <= 30) {
-      scoreColor = AppColors.emerald500;
-    } else if (riskScore <= 70) {
-      scoreColor = AppColors.amber300;
-    } else {
-      scoreColor = AppColors.rose500;
-    }
-
-    return SizedBox(
-      width: 120,
-      height: 120,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          SizedBox.expand(
-            child: CustomPaint(
-              painter: _PieChartPainter(
-                percentage: riskScore,
-                color: scoreColor,
-                backgroundColor:
-                    isDarkMode ? AppColors.slate700 : AppColors.slate200,
-              ),
-            ),
-          ),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('$riskScore',
-                  style: AppStyles.heading1.copyWith(fontSize: 28, color: scoreColor)),
-              Text('Risk Score',
-                  style: AppStyles.body.copyWith(fontSize: 12,
-                      color: isDarkMode ? AppColors.slate300 : AppColors.slate600)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PieChartPainter extends CustomPainter {
-  final int percentage;
-  final Color color;
-  final Color backgroundColor;
-
-  _PieChartPainter(
-      {required this.percentage,
-      required this.color,
-      required this.backgroundColor});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    const strokeWidth = 12.0;
-
-    // Background circle
-    final backgroundPaint = Paint()
-      ..color = backgroundColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
-    canvas.drawCircle(center, radius, backgroundPaint);
-
-    // Foreground arc
-    final foregroundPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round;
-
-    const startAngle = -math.pi / 2;
-    final sweepAngle = 2 * math.pi * (percentage / 100);
-
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), startAngle,
-        sweepAngle, false, foregroundPaint);
-  }
-
-  @override
-  bool shouldRepaint(_PieChartPainter oldDelegate) {
-    return oldDelegate.percentage != percentage || oldDelegate.color != color;
   }
 }

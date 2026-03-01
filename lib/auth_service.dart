@@ -269,12 +269,14 @@ class ScanHistoryItem {
   final String id;
   final DateTime createdAt;
   final String productName;
+  final List<String> ingredients;
 
   ScanHistoryItem({
     required this.result,
     required this.id,
     required this.createdAt,
     required this.productName,
+    required this.ingredients,
   });
 
   factory ScanHistoryItem.fromJson(Map<String, dynamic> json) {
@@ -286,6 +288,7 @@ class ScanHistoryItem {
       result: ScanResult.fromJson(json['result'], productName: productName),
       createdAt: createdAt,
       productName: productName,
+      ingredients: (json['ingredients'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
 }

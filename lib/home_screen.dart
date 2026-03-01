@@ -7,10 +7,12 @@ import 'package:label_lensv2/neopop_button.dart';
 import 'dart:math' as math;
 import 'package:label_lensv2/user_profile.dart';
 import 'package:label_lensv2/scan_result.dart';
+import 'package:label_lensv2/history_screen.dart';
 
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  final VoidCallback onScanPressed;
+  const HomeScreen({Key? key, required this.onScanPressed}) : super(key: key);
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
@@ -29,12 +31,26 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
   }
 
+  Future<void> _refreshData() async {
+    setState(() {
+      _dataFuture = Future.wait([
+        _authService.getUserProfile(),
+        _authService.getScanHistory(),
+      ]);
+    });
+    await _dataFuture;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: isDarkMode ? AppColors.slate900 : AppColors.slate50,
-      body: FutureBuilder<List<dynamic>>(
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
+        color: isDarkMode ? AppColors.slate900 : AppColors.white,
+        backgroundColor: isDarkMode ? AppColors.white : AppColors.slate900,
+        child: FutureBuilder<List<dynamic>>(
         future: _dataFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -58,6 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final unsafeCount = history.length - safeCount;
 
           return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(24.0).copyWith(top: MediaQuery.of(context).padding.top + 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -71,6 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         },
+      ),
       ),
     );
   }
@@ -114,9 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
               SizedBox(
                 height: 56,
                 child: NeopopButton(
-                  onPressed: () {
-                    // This should be handled by the parent widget managing the BottomNavBar
-                  },
+                  onPressed: widget.onScanPressed,
                   color: AppColors.white,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -251,7 +267,12 @@ class _HomeScreenState extends State<HomeScreen> {
             SizedBox(
               height: 32,
               child: NeopopButton(
-                onPressed: () { },
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                  );
+                },
                 color: isDarkMode ? AppColors.slate800 : AppColors.white,
                 shadowOffset: 2,
                 child: Padding(
@@ -294,8 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildRecentScanItem(BuildContext context, ScanHistoryItem item, bool isDarkMode) {
     final result = item.result;
-    final severity = result.severity.toLowerCase();
-    final statusColor = result.safe ? AppColors.emerald400 : (severity == 'critical' ? AppColors.rose400 : AppColors.amber300);
+    final statusColor = result.safe ? AppColors.emerald400 : AppColors.rose400;
 
     return GestureDetector(
       onTap: () => _showHistoryDetailDialog(context, item, isDarkMode),

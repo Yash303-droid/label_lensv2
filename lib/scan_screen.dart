@@ -14,6 +14,9 @@ import 'dart:math' as math;
 import 'package:label_lensv2/dotted_background.dart';
 import 'package:label_lensv2/neopop_button.dart';
 import 'package:label_lensv2/scan_result.dart';
+import 'package:label_lensv2/scan_result_view.dart';
+import 'package:label_lensv2/crop_screen.dart';
+
 
 
 class ScanScreen extends StatefulWidget {
@@ -190,44 +193,76 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     }
 
     if (image != null) {
+      // Navigate to Crop Screen to adjust ROI
+      if (!mounted) return;
+      final Rect? cropRect = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => CropScreen(imagePath: image!.path)),
+      );
+
+      if (cropRect == null) return; // User cancelled crop
+
       setState(() => _scanState = 'processing'); // Show loading UI first
 
       try {
-        // 1. Extract text
-      final textRecognizer = TextRecognizer();
-      final inputImage = InputImage.fromFilePath(image.path);
-      final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
-      textRecognizer.close();
+        // 1. Get image dimensions to define ROI (Region of Interest)
+        final data = await image.readAsBytes();
+        final decodedImage = await decodeImageFromList(data);
+        final double width = decodedImage.width.toDouble();
+        final double height = decodedImage.height.toDouble();
 
-      String fullText = recognizedText.text.toLowerCase();
-      List<String> ingredientsList = [];
-      String productName = recognizedText.text.split('\n').first.trim();
-      if (productName.isEmpty && recognizedText.blocks.isNotEmpty) {
-        productName = recognizedText.blocks.first.text.replaceAll('\n', ' ');
-      }
-      if (productName.isEmpty) {
-        productName = "Scanned Product";
-      }
+        // 2. Extract text
+        final textRecognizer = TextRecognizer();
+        final inputImage = InputImage.fromFilePath(image.path);
+        final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
+        textRecognizer.close();
 
-      // 2. Parse ingredients
-      const ingredientsKeyword = 'ingredients';
-      int keywordIndex = fullText.indexOf(ingredientsKeyword);
+        // 3. Filter text inside the user-defined ROI
+        // cropRect is normalized (0.0 to 1.0), so we multiply by actual image dimensions
+        final Rect roi = Rect.fromLTRB(
+          cropRect.left * width,
+          cropRect.top * height,
+          cropRect.right * width,
+          cropRect.bottom * height,
+        );
 
-      if (keywordIndex != -1) {
-        String ingredientsBlock = fullText.substring(keywordIndex + ingredientsKeyword.length);
-
-        ingredientsBlock = ingredientsBlock.trim().replaceFirst(RegExp(r'^[:\s]+'), '');
-
-        int endOfListIndex = ingredientsBlock.indexOf('.');
-        if (endOfListIndex != -1) {
-          ingredientsBlock = ingredientsBlock.substring(0, endOfListIndex);
+        List<TextBlock> validBlocks = [];
+        for (var block in recognizedText.blocks) {
+          // Check if the block's center intersects with our ROI
+          if (roi.contains(block.boundingBox.center)) {
+            validBlocks.add(block);
+          }
         }
 
-        ingredientsBlock = ingredientsBlock.replaceAll(RegExp(r'\([^)]*\)'), '');
+        // Fallback: If ROI filtering removes everything, use all blocks
+        if (validBlocks.isEmpty) {
+          validBlocks = recognizedText.blocks;
+        }
 
-        ingredientsList =
-            ingredientsBlock.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-      }
+        // Sort blocks: Top-to-bottom, then Left-to-right
+        validBlocks.sort((a, b) {
+          final double dy = a.boundingBox.top - b.boundingBox.top;
+          if (dy.abs() > 20) return dy.compareTo(0); // Significant vertical difference
+          return a.boundingBox.left.compareTo(b.boundingBox.left);
+        });
+
+        // 4. Construct JSON-ready data
+        String fullText = validBlocks.map((b) => b.text).join('\n');
+        String productName = validBlocks.isNotEmpty ? validBlocks.first.text.split('\n').first : "Scanned Product";
+        
+        // Extract ingredients section
+        String lowerText = fullText.toLowerCase();
+        int keywordIndex = lowerText.indexOf('ingredients');
+        String ingredientsText = keywordIndex != -1 
+            ? fullText.substring(keywordIndex + 11).trim().replaceFirst(RegExp(r'^[:\s]+'), '') 
+            : fullText;
+
+        // Clean and split into list
+        List<String> ingredientsList = ingredientsText
+            .split(RegExp(r'[,.]')) // Split by comma or dot
+            .map((e) => e.trim().replaceAll(RegExp(r'\s+'), ' '))
+            .where((e) => e.length > 2) // Filter out noise
+            .toList();
 
         // 3. Call API
         final authService = AuthService();
@@ -466,196 +501,8 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildResultState() {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final result = _scanResult;
-
-    if (result == null) {
-      return _buildErrorState();
-    }
-
-    final severity = result.severity.toLowerCase();
-    final statusColor = severity == 'critical'
-        ? AppColors.rose500
-        : (severity == 'moderate' ? AppColors.amber300 : AppColors.emerald500);
-
-    return Scaffold(
-    backgroundColor: isDarkMode ? AppColors.slate900 : AppColors.slate50,
-    appBar: AppBar(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      leading: IconButton(
-        icon: Icon(Icons.arrow_back, color: isDarkMode ? Colors.white : AppColors.slate900),
-        onPressed: _resetState,
-      ),
-      title: Text('SCAN RESULT', style: AppStyles.heading1.copyWith(fontSize: 18)),
-      centerTitle: true,
-      actions: [
-        if (_isSaving)
-          Padding(
-            padding: const EdgeInsets.only(right: 20.0),
-            child: Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  color: isDarkMode ? Colors.white : AppColors.slate900,
-                ),
-              ),
-            ),
-          )
-        else
-          IconButton(
-            icon: Icon(Icons.bookmark_add_outlined, color: isDarkMode ? Colors.white : AppColors.slate900),
-            tooltip: 'Save for Later',
-            onPressed: _scanResult?.id == null ? null : () async {
-              if (_isSaving) return;
-              setState(() => _isSaving = true);
-              try {
-                final success = await AuthService().saveScanForLater(_scanResult!.id!);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(success ? 'Scan saved successfully!' : 'Failed to save scan.')),
-                  );
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}')));
-                }
-              } finally {
-                if (mounted) setState(() => _isSaving = false);
-              }
-            },
-          ),
-      ],
-    ),
-    body: SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Product Header Card
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: isDarkMode ? AppColors.slate800 : AppColors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: AppStyles.getBorder(isDarkMode, width: 3),
-              boxShadow: [AppStyles.getShadow(isDarkMode, offset: 6)],
-            ),
-            child: Column(
-              children: [
-                Text(result.productName.toUpperCase(), style: AppStyles.heading1.copyWith(fontSize: 24), textAlign: TextAlign.center),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: statusColor,
-                    borderRadius: BorderRadius.circular(8),
-                    border: AppStyles.getBorder(isDarkMode, width: 2),
-                  ),
-                  child: Text(
-                    severity.toUpperCase(),
-                    style: AppStyles.bodyBold.copyWith(color: Colors.white, fontSize: 12),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  result.summary,
-                  textAlign: TextAlign.center,
-                  style: AppStyles.bodyBold.copyWith(color: isDarkMode ? AppColors.slate300 : AppColors.slate600),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 32),
-          // Risk Score and Safe Status
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              RiskScorePieChart(
-                  riskScore: result.riskScore, isDarkMode: isDarkMode),
-              SafeStatusWidget(isSafe: result.safe, isDarkMode: isDarkMode),
-            ],
-          ),
-          const SizedBox(height: 32),
-          if (result.issues.isNotEmpty) ...[
-            Text('IDENTIFIED ISSUES', style: AppStyles.heading1.copyWith(fontSize: 16)),
-            const SizedBox(height: 16),
-            ...result.issues.map((issue) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isDarkMode ? AppColors.slate800 : AppColors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.rose400, width: 2),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, color: AppColors.rose400),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Text(issue.reason, style: AppStyles.bodyBold),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-            const SizedBox(height: 32),
-          ],
-          if (result.alternatives.isNotEmpty) ...[
-            Text('SUGGESTED ALTERNATIVES', style: AppStyles.heading1.copyWith(fontSize: 16)),
-            const SizedBox(height: 16),
-            ...result.alternatives.map((alt) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isDarkMode ? AppColors.slate800 : AppColors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.emerald400, width: 2),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(alt.name, style: AppStyles.bodyBold.copyWith(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 8),
-                    Text(alt.reason, style: AppStyles.bodyBold.copyWith(fontWeight: FontWeight.normal)),
-                    const SizedBox(height: 12),
-                    if (alt.searchLink.isNotEmpty)
-                      SizedBox(
-                        height: 40,
-                        child: NeopopButton(
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: alt.searchLink));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Link copied to clipboard!')),
-                            );
-                          },
-                          color: AppColors.indigo400,
-                          child: Center(
-                              child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.copy, color: Colors.white, size: 14),
-                              const SizedBox(width: 8),
-                              Text('Copy Link', style: AppStyles.buttonText.copyWith(fontSize: 12)),
-                            ],
-                          )),
-                        ),
-                      )
-                  ],
-                ),
-              );
-            }).toList(),
-          ],
-        ],
-      ),
-    ),
-  );
+    if (_scanResult == null) return _buildErrorState();
+    return ScanResultView(onBackPressed: _resetState, result: _scanResult!);
   }
 
   Widget _buildProcessingCard(bool isDarkMode) {

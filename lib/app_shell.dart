@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:label_lensv2/bottom_nav_bar.dart';
-import 'package:label_lensv2/history_screen.dart';
 import 'package:label_lensv2/home_screen.dart';
 import 'package:label_lensv2/main_app_header.dart';
 import 'package:label_lensv2/profile_screen.dart';
-import 'package:label_lensv2/saved_screen.dart';
 import 'package:label_lensv2/scan_screen.dart';
 import 'package:label_lensv2/setup_screen.dart';
 
@@ -28,16 +26,14 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _pages = <Widget>[
-      const HomeScreen(),
-      const HistoryScreen(),
+      HomeScreen(onScanPressed: () => _onItemTapped(1)),
       ScanScreen(key: _scanScreenKey),
-      const SavedScreen(),
       ProfileScreen(key: _profileScreenKey, toggleTheme: widget.toggleTheme),
     ];
   }
 
   void _onItemTapped(int index) {
-    if (index == 2 && _selectedIndex == 2) {
+    if (index == 1 && _selectedIndex == 1) {
       // If scan tab is tapped while already on it, trigger the scan action.
       // This is valid for both camera and gallery modes.
       _scanScreenKey.currentState?.startProcessing();
@@ -54,12 +50,8 @@ class _AppShellState extends State<AppShell> {
       case 0:
         return 'Dashboard';
       case 1:
-        return 'History';
-      case 2:
         return 'Scan';
-      case 3:
-        return 'Saved';
-      case 4:
+      case 2:
         return 'Profile';
       default:
         return 'Dashboard';
