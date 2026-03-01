@@ -33,6 +33,7 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
   CameraController? _cameraController;
   Future<void>? _initializeControllerFuture;
   ScanResult? _scanResult;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -488,6 +489,45 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
       ),
       title: Text('SCAN RESULT', style: AppStyles.heading1.copyWith(fontSize: 18)),
       centerTitle: true,
+      actions: [
+        if (_isSaving)
+          Padding(
+            padding: const EdgeInsets.only(right: 20.0),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: isDarkMode ? Colors.white : AppColors.slate900,
+                ),
+              ),
+            ),
+          )
+        else
+          IconButton(
+            icon: Icon(Icons.bookmark_add_outlined, color: isDarkMode ? Colors.white : AppColors.slate900),
+            tooltip: 'Save for Later',
+            onPressed: _scanResult?.id == null ? null : () async {
+              if (_isSaving) return;
+              setState(() => _isSaving = true);
+              try {
+                final success = await AuthService().saveScanForLater(_scanResult!.id!);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(success ? 'Scan saved successfully!' : 'Failed to save scan.')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}')));
+                }
+              } finally {
+                if (mounted) setState(() => _isSaving = false);
+              }
+            },
+          ),
+      ],
     ),
     body: SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -530,6 +570,17 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(height: 32),
+          // Risk Score and Safe Status
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              RiskScorePieChart(
+                  riskScore: result.riskScore, isDarkMode: isDarkMode),
+              SafeStatusWidget(isSafe: result.safe, isDarkMode: isDarkMode),
+            ],
+          ),
+          const SizedBox(height: 32),
           if (result.issues.isNotEmpty) ...[
             Text('IDENTIFIED ISSUES', style: AppStyles.heading1.copyWith(fontSize: 16)),
             const SizedBox(height: 16),
@@ -555,18 +606,6 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
             }).toList(),
             const SizedBox(height: 32),
           ],
-          Text('HEALTH IMPACT', style: AppStyles.heading1.copyWith(fontSize: 16)),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDarkMode ? AppColors.slate800 : AppColors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: AppStyles.getBorder(isDarkMode, width: 2),
-            ),
-            child: Text(result.healthImpact, style: AppStyles.bodyBold.copyWith(height: 1.5)),
-          ),
-          const SizedBox(height: 32),
           if (result.alternatives.isNotEmpty) ...[
             Text('SUGGESTED ALTERNATIVES', style: AppStyles.heading1.copyWith(fontSize: 16)),
             const SizedBox(height: 16),
@@ -765,6 +804,92 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
 }
 }
 
+class SafeStatusWidget extends StatelessWidget {
+  final bool isSafe;
+  final bool isDarkMode;
+
+  const SafeStatusWidget(
+      {Key? key, required this.isSafe, required this.isDarkMode})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isSafe ? AppColors.emerald500 : AppColors.rose500;
+    final icon =
+        isSafe ? Icons.check_circle_outline : Icons.dangerous_outlined;
+    final text = isSafe ? 'Considered Safe' : 'Potential Risks';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDarkMode ? AppColors.slate800 : AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color, width: 2),
+        boxShadow: [AppStyles.getShadow(isDarkMode)],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 24),
+          const SizedBox(width: 12),
+          Text(text, style: AppStyles.bodyBold.copyWith(color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+class RiskScorePieChart extends StatelessWidget {
+  final int riskScore;
+  final bool isDarkMode;
+
+  const RiskScorePieChart(
+      {Key? key, required this.riskScore, required this.isDarkMode})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    Color scoreColor;
+    if (riskScore <= 30) {
+      scoreColor = AppColors.emerald500;
+    } else if (riskScore <= 70) {
+      scoreColor = AppColors.amber300;
+    } else {
+      scoreColor = AppColors.rose500;
+    }
+
+    return SizedBox(
+      width: 120,
+      height: 120,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox.expand(
+            child: CustomPaint(
+              painter: _PieChartPainter(
+                percentage: riskScore,
+                color: scoreColor,
+                backgroundColor:
+                    isDarkMode ? AppColors.slate700 : AppColors.slate200,
+              ),
+            ),
+          ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('$riskScore',
+                  style: AppStyles.heading1.copyWith(fontSize: 28, color: scoreColor)),
+              Text('Risk Score',
+                  style: AppStyles.body.copyWith(fontSize: 12,
+                      color: isDarkMode ? AppColors.slate300 : AppColors.slate600)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ScanningLineAnimation extends AnimatedWidget {
   const _ScanningLineAnimation({Key? key, required AnimationController controller, required double fromTop, required double toTop
   })
@@ -795,6 +920,49 @@ class _ScanningLineAnimation extends AnimatedWidget {
         ),
       );
     });
+  }
+}
+
+class _PieChartPainter extends CustomPainter {
+  final int percentage;
+  final Color color;
+  final Color backgroundColor;
+
+  _PieChartPainter(
+      {required this.percentage,
+      required this.color,
+      required this.backgroundColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    const strokeWidth = 12.0;
+
+    // Background circle
+    final backgroundPaint = Paint()
+      ..color = backgroundColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+    canvas.drawCircle(center, radius, backgroundPaint);
+
+    // Foreground arc
+    final foregroundPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    const startAngle = -math.pi / 2;
+    final sweepAngle = 2 * math.pi * (percentage / 100);
+
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), startAngle,
+        sweepAngle, false, foregroundPaint);
+  }
+
+  @override
+  bool shouldRepaint(_PieChartPainter oldDelegate) {
+    return oldDelegate.percentage != percentage || oldDelegate.color != color;
   }
 }
 

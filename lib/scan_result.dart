@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ScanResult {
+  final String? id;
   final bool safe;
   final int riskScore;
   final String severity;
@@ -12,6 +13,7 @@ class ScanResult {
   final String productName;
 
   ScanResult({
+    this.id,
     required this.safe,
     required this.riskScore,
     required this.severity,
@@ -24,6 +26,7 @@ class ScanResult {
 
   factory ScanResult.fromJson(Map<String, dynamic> json, {String productName = 'Scanned Product'}) {
     return ScanResult(
+      id: json['_id'],
       safe: json['safe'] ?? false,
       riskScore: json['riskScore'] ?? 0,
       severity: json['severity'] ?? 'unknown',

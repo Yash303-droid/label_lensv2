@@ -164,6 +164,33 @@ class AuthService {
     }
   }
 
+  Future<bool> saveScanForLater(String scanId) async {
+    final token = await _getToken();
+    if (token == null) {
+      throw Exception('Authentication token not found. Please log in again.');
+    }
+
+    try {
+      // Assuming an endpoint like this exists.
+      final response = await http.post(
+        Uri.parse('$_apiBaseUrl/api/scan/save/$scanId'),
+        headers: <String, String>{
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final responseBody = jsonDecode(response.body);
+        return responseBody['success'] == true;
+      } else {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['message'] ?? 'Failed to save scan. Status code: ${response.statusCode}');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
    Future<bool> isLoggedIn() async {
     final token = await _getToken();
     // For a more robust check, you could decode the JWT and check its expiration date.

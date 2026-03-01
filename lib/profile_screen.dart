@@ -49,8 +49,32 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _handleLogout() async {
-    await _authService.logout();
-    if (mounted) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final bool? shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDarkMode ? AppColors.slate800 : AppColors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: AppStyles.getBorderSide(isDarkMode, width: 2),
+        ),
+        title: Text('Terminate Session?', style: AppStyles.heading1.copyWith(fontSize: 20)),
+        content: Text('Are you sure you want to sign out?', style: AppStyles.body),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('CANCEL', style: AppStyles.bodyBold.copyWith(color: isDarkMode ? AppColors.slate300 : AppColors.slate600)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('SIGN OUT', style: AppStyles.bodyBold.copyWith(color: AppColors.rose400)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true && mounted) {
+      await _authService.logout();
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => AuthScreen(toggleTheme: widget.toggleTheme)),
         (Route<dynamic> route) => false,
@@ -62,24 +86,32 @@ class ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: isDarkMode ? AppColors.white : AppColors.slate900))
-          : _error != null
-              ? Center(child: Text('Error: $_error', style: TextStyle(color: AppColors.rose400)))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    children: [
-                      _buildProfileHeader(context, isDarkMode),
-                      const SizedBox(height: 24),
-                      _buildProfileDetails(context, isDarkMode),
-                      const SizedBox(height: 24),
-                      _buildSettingsMenu(context, isDarkMode),
-                      const SizedBox(height: 24),
-                      _buildSignOutButton(context, isDarkMode),
-                    ],
+      backgroundColor: isDarkMode ? AppColors.slate900 : AppColors.slate50,
+      appBar: AppBar(
+        title: Text('YOUR PROFILE', style: AppStyles.heading1.copyWith(fontSize: 18)),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+      ),
+      body: SafeArea(
+        child: _isLoading
+            ? Center(child: CircularProgressIndicator(color: isDarkMode ? AppColors.white : AppColors.slate900))
+            : _error != null
+                ? Center(child: Text('Error: $_error', style: TextStyle(color: AppColors.rose400)))
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      children: [
+                        _buildProfileHeader(context, isDarkMode),
+                        const SizedBox(height: 24),
+                        _buildProfileDetails(context, isDarkMode),
+                        const SizedBox(height: 24),
+                        _buildSettingsMenu(context, isDarkMode),
+                      ],
+                    ),
                   ),
-                ),
+      ),
     );
   }
 
@@ -107,6 +139,8 @@ class ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 8),
           _buildStatusBadge(isDarkMode),
+          const SizedBox(height: 24),
+          _buildSignOutButton(context, isDarkMode),
         ],
       ),
     );
