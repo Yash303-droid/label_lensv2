@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:label_lensv2/user_profile.dart';
@@ -7,9 +8,12 @@ import 'package:label_lensv2/scan_result.dart';
 
 
 class AuthService {
-  // TODO: Replace with your actual backend URL
-  final String _apiBaseUrl = "https://label-lens-backend-5okm.onrender.com";
+  String? _apiBaseUrl;
   final _storage = const FlutterSecureStorage();
+
+  AuthService() {
+    _apiBaseUrl = dotenv.env['API_BASE_URL'];
+  }
 
   Future<bool> login(String email, String password) async {
     try {

@@ -6,10 +6,13 @@ import 'package:label_lensv2/auth_screen.dart';
 import 'package:label_lensv2/auth_service.dart';
 
 
+import 'package:label_lensv2/profile_screen.dart';
+import 'package:label_lensv2/setup_screen.dart';
+
 Future<void> main() async {
   // Load environment variables from the .env file
   await dotenv.load(fileName: ".env");
-  
+
   // Ensure that plugin services are initialized so that `flutter_secure_storage` works.
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
@@ -37,11 +40,15 @@ class _MyAppState extends State<MyApp> {
   Future<void> _checkLoginStatus() async {
     try {
       // A more robust check: try to fetch user profile to validate the token.
-      await _authService.getUserProfile();
+      final userProfile = await _authService.getUserProfile();
       // If it succeeds, the user is logged in.
       if (mounted) {
         setState(() {
-          _initialScreen = AppShell(toggleTheme: _toggleTheme);
+          if (userProfile.name == 'User') {
+            _initialScreen = SetupScreen(toggleTheme: _toggleTheme);
+          } else {
+            _initialScreen = AppShell(toggleTheme: _toggleTheme);
+          }
           _isLoading = false;
         });
       }
