@@ -44,12 +44,12 @@ class ScanScreenState extends State<ScanScreen> with TickerProviderStateMixin {
     _idleScanAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
-    )..repeat();
+    )..repeat(reverse: true);
 
     _processingScanAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
-    )..repeat();
+    )..repeat(reverse: true);
 
     _bounceAnimationController = AnimationController(
       vsync: this,
@@ -738,19 +738,26 @@ class RiskScorePieChart extends StatelessWidget {
 }
 
 class _ScanningLineAnimation extends AnimatedWidget {
-  const _ScanningLineAnimation({Key? key, required AnimationController controller, required double fromTop, required double toTop
-  })
-      : super(key: key, listenable: controller);
+  final double fromTop;
+  final double toTop;
+
+  const _ScanningLineAnimation({
+    Key? key,
+    required AnimationController controller,
+    required this.fromTop,
+    required this.toTop,
+  }) : super(key: key, listenable: controller);
 
   Animation<double> get _progress => listenable as Animation<double>;
 
   @override
   Widget build(BuildContext context) {
+    final currentY = fromTop + (toTop - fromTop) * _progress.value;
     return LayoutBuilder(builder: (context, constraints) {
       return Opacity(
         opacity: math.sin(_progress.value * math.pi),
         child: Align(
-          alignment: Alignment(0, -1.0 + (_progress.value * 2 * 0.98)),
+          alignment: Alignment(0, currentY),
           child: Container(
             height: 6,
             decoration: const BoxDecoration(

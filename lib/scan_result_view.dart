@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:label_lensv2/ai_dietitian_sheet.dart';
+import 'package:label_lensv2/app_colors.dart';
 import 'package:label_lensv2/scan_result.dart';
+import 'package:label_lensv2/user_profile.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ScanResultView extends StatelessWidget {
@@ -19,15 +23,55 @@ class ScanResultView extends StatelessWidget {
   static const Color textPrimary = Colors.white;
   static const Color textSecondary = Color(0xFF94A3B8);
 
+  void _showAiDietitianSheet(BuildContext context) {
+    // A dummy profile for demonstration. In a real app, you'd get this from your auth/user service.
+    final dummyProfile = UserProfile(
+      name: 'Jane Doe',
+      email: 'jane.doe@example.com',
+      age: 28,
+      diet: 'Vegetarian',
+      allergies: ['Tree Nuts'],
+      healthIssues: ['Lactose Intolerance'],
+    );
+    
+    // Extracting ingredient names from the verdicts list.
+    final ingredients = result.verdicts.map((v) => v.name).toList();
+    
+    final apiKey = dotenv.env['GEMINI_API_KEY'];
+    if (apiKey == null) {
+      // It's better to show a dialog or a snackbar than to print.
+      // For this example, we'll throw an error to make it clear during development.
+      throw Exception('GEMINI_API_KEY not found in .env file');
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AiDietitianSheet(
+        productName: result.productName,
+        ingredients: ingredients,
+        userProfile: dummyProfile,
+        apiKey: apiKey,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: appBg,
-      body: Column(
-        children: [
-          _buildHeader(context),
-          Expanded(
-            child: SingleChildScrollView(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAiDietitianSheet(context),
+        backgroundColor: AppColors.emerald400,
+        child: const Icon(Icons.chat_bubble_outline, color: AppColors.slate900),
+      ),
+      bottomNavigationBar: _buildStickyBottomActionBar(),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            _buildHeader(context),
+            Padding(
               padding: const EdgeInsets.all(24.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -39,13 +83,11 @@ class ScanResultView extends StatelessWidget {
                     const SizedBox(height: 24),
                     _buildBetterOptionsSection(),
                   ],
-                  const SizedBox(height: 40), // Bottom spacing
                 ],
               ),
             ),
-          ),
-          _buildStickyBottomActionBar(),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -64,7 +106,7 @@ class ScanResultView extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: headerColor,
-        borderRadius: BorderRadius.only(
+        borderRadius: const BorderRadius.only(
           bottomLeft: Radius.circular(32),
           bottomRight: Radius.circular(32),
         ),
@@ -104,7 +146,7 @@ class ScanResultView extends StatelessWidget {
                 child: Center(
                   child: Text(
                     "${result.riskScore} / 100",
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.black,
                       fontWeight: FontWeight.w900,
                       fontSize: 18,
@@ -120,7 +162,7 @@ class ScanResultView extends StatelessWidget {
                 ),
                 child: Text(
                   result.severity.toUpperCase(),
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
@@ -144,7 +186,7 @@ class ScanResultView extends StatelessWidget {
           Text(
             result.productName.toUpperCase(),
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.black,
               fontSize: 24,
               fontWeight: FontWeight.w900,
@@ -184,7 +226,7 @@ class ScanResultView extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             result.summary,
-            style: TextStyle(
+            style: const TextStyle(
               color: textSecondary,
               fontSize: 14,
               height: 1.5,

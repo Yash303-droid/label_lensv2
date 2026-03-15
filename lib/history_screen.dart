@@ -17,6 +17,7 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   late Future<List<ScanHistoryItem>> _historyFuture;
+  String _filterStatus = 'All'; // 'All', 'Safe', 'Risky'
 
   @override
   void initState() {
@@ -51,7 +52,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
               hint: 'Search past scans...',
               icon: Icons.search,
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                _buildFilterChip('All', isDarkMode),
+                const SizedBox(width: 8),
+                _buildFilterChip('Safe', isDarkMode),
+                const SizedBox(width: 8),
+                _buildFilterChip('Risky', isDarkMode),
+              ],
+            ),
+            const SizedBox(height: 16),
             Expanded(
               child: FutureBuilder<List<ScanHistoryItem>>(
                 future: _historyFuture,
@@ -75,7 +86,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     );
                   }
 
-                  final historyItems = snapshot.data!;
+                  final historyItems = snapshot.data!.where((item) {
+                    if (_filterStatus == 'All') return true;
+                    if (_filterStatus == 'Safe') return item.result.safe;
+                    if (_filterStatus == 'Risky') return !item.result.safe;
+                    return true;
+                  }).toList();
+
+                  if (historyItems.isEmpty) return const Center(child: Text("No items match filter"));
+
                   return RefreshIndicator(
                     onRefresh: _refreshHistory,
                     color: isDarkMode ? AppColors.slate900 : AppColors.white,
@@ -136,6 +155,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String status, bool isDarkMode) {
+    final isSelected = _filterStatus == status;
+    Color bgColor;
+    Color textColor;
+
+    if (isSelected) {
+      bgColor = isDarkMode ? AppColors.emerald400 : AppColors.slate900;
+      textColor = isDarkMode ? AppColors.slate900 : AppColors.white;
+    } else {
+      bgColor = isDarkMode ? AppColors.slate800 : AppColors.slate200;
+      textColor = isDarkMode ? AppColors.white : AppColors.slate900;
+    }
+
+    return GestureDetector(
+      onTap: () => setState(() => _filterStatus = status),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(status, style: AppStyles.bodyBold.copyWith(color: textColor)),
       ),
     );
   }

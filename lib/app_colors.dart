@@ -38,4 +38,6 @@ class AppColors {
   static get slate400 => null;
 
   static get slate500 => null;
+
+  static Color? get textSecondary => null;
 }

@@ -8,7 +8,7 @@ import 'package:label_lensv2/scan_result.dart';
 
 class AuthService {
   // TODO: Replace with your actual backend URL
-  final String _apiBaseUrl = "https://nutrilens-015o.onrender.com";
+  final String _apiBaseUrl = "https://label-lens-backend-5okm.onrender.com";
   final _storage = const FlutterSecureStorage();
 
   Future<bool> login(String email, String password) async {
